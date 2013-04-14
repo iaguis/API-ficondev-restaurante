@@ -86,15 +86,15 @@ class Order(_Base):
     __tablename__ = 'orders'
 
     order_id = Column(Integer, primary_key=True)
-    date = Column(DateTime)
+    date_ordered = Column(DateTime)
+    date_ready = Column(DateTime)
     client_id = Column(Integer, ForeignKey('clients.client_id'))
 
     client = relationship("Client", backref=backref('orders'))
 
-    def __init__(self, date, amount):
-        self.date = date
-        self.amount = amount
-        self.date_ordered = datetime.now()
+    def __init__(self, client_id, date_ordered):
+        self.client_id = client_id
+        self.date_ordered = date_ordered
 
     def __repr__(self):
         return "<Order('%d', '%s')>" % (self.order_id, self.amount)
@@ -105,7 +105,7 @@ class Product(_Base):
     product_id = Column(Integer, primary_key=True)
     name = Column(String(length=255))
     description = Column(String(length=255))
-    product_type = Column(String(length=1))
+    product_type = Column(String(length=20))
     price = Column(Float)
 
     def __init__(self, name, description, product_type, price):

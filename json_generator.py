@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 from datetime import datetime
-from utils import tod
 
 def json_login(session_id):
     return session_id
@@ -15,16 +14,14 @@ def json_error(error):
 def json_signup():
     return "success"
 
-def json_neworder(order_id):
-    return json.dumps({"order_id" : order_id}, ensure_ascii=False)
-
 def json_reserve(reservation):
     reservation_dict = { "reservation_id" : reservation.reservation_id,
                          "day" : datetime.strftime(reservation.day, "%d-%m-%Y"),
-                         "time_of_day" : tod[reservation.time_of_day],
+                         "time_of_day" : reservation.time_of_day,
                          "table_number" : reservation.table_id
                        }
     return json.dumps(reservation_dict, ensure_ascii=False)
+
 
 def json_show_tables(tables):
     tables_dict = {"tables" : []}
@@ -43,22 +40,34 @@ def json_show_tables(tables):
 def json_products(products_dict):
     return json.dumps(products_dict, ensure_ascii=False)
 
-#def json_orders(orders):
-    #orders_dict = {"orders" : []}
-    #orders_dict["server_time"] = int(round(unix_time_millis(datetime.now())))
+def _get_products_of_order(order, order_products):
+    products_list = { "products" : [] }
+    total_price = 0
+    for p in order_products:
+        p_dict = { "product_id" : p.product_id}
+        p_dict["amount"] = p.amount
+        price = (p.amount * p.product.price)
+        p_dict["price"] = price
+        total_price += price
+        products_list["products"].append(p_dict)
+    products_list["total_price"] = total_price
+    return products_list, price
 
-    #for order in orders:
-        #order_dict = { "order_id"     : order.order_id,
-                    #"product_id"      : order.product_id,
-                    #"product_name"      : order.products.name,
-                    #"amount"       : order.amount,
-                    #"date_ordered" : int(round(unix_time_millis(order.date_ordered))),
-                    #"order_price" : order.amount * order.products.price,
-                    #}
+def json_neworder(order):
+    neworder_dict = { "order_id" : order.order_id }
 
-        #if order.date_ready:
-            #order_dict["date_ready"] = int(round(unix_time_millis(order.date_ready)))
-            #if order.date_picked:
-                #order_dict["date_picked"] = int(round(unix_time_millis(order.date_picked)))
-        #orders_dict["orders"].append(order_dict)
-    #return json.dumps(orders_dict, ensure_ascii=False)
+    products_list, price = _get_products_of_order(order, order.order_lines)
+
+    neworder_dict["products"] = products_list
+
+    return json.dumps(neworder_dict, ensure_ascii=False)
+
+def json_orders(orders):
+    orders_dict = {"orders" : []}
+    for order in orders:
+        order_dict = { "order_id" : order.order_id}
+        products_list, price = _get_products_of_order(order, order.order_lines)
+
+        order_dict["products"] = products_list
+        orders_dict["orders"].append(order_dict)
+    return json.dumps(orders_dict, ensure_ascii=False)

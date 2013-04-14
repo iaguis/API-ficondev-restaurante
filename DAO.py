@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-from model import loadSession, Client, Order, Product, Table, Reservation
+from model import loadSession, Client, Order, Product, Table, Reservation, Order_Line
 import hashlib
 from validator import REG_NICK, REG_SHA1, REG_EMAIL, checkParam
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
-from json_generator import json_error, json_login, json_logout, json_signup, json_reserve, json_show_tables
+from json_generator import json_error, json_login, json_logout, json_signup, json_reserve, json_show_tables, json_products, json_neworder
+from json_generator import json_orders
 from datetime import datetime
 import json
 import M2Crypto
@@ -82,43 +83,42 @@ class DAO:
 
         return json_signup()
 
-    #def neworder(self, session_id, json_order):
-        #distributor = self._get_distributor(session_id)
+    def neworder(self, session_id, json_order):
+        client = self._get_client(session_id)
 
-        #if not distributor:
-            #return json_error("NotLoggedIn")
+        if not client:
+            return json_error("NotLoggedIn")
 
-        #order_dict = json.loads(json_order)
+        order_dict = json.loads(json_order)
+        order = Order(client.client_id, datetime.now())
 
-        #product_id = order_dict["product_id"]
-        #amount = order_dict["amount"]
+        self.session.add(order)
+        try:
+            self.session.commit()
+        except:
+            self.session.rollback()
+            return json_error("ErrorPlacingOrder")
 
-        #try:
-            #product = self.session.query(Product).filter(Product.product_id == product_id).one()
-        #except:
-            #return json_error("ProductNonExistant")
+        for order_line in order_dict["order"]:
+            product_id = order_line["product_id"]
+            try:
+                product = self.session.query(Product).filter(Product.product_id == product_id).one()
+            except:
+                self.session.rollback()
+                return json_error("ProductNonExistant")
 
-        #order = Order(datetime.now(), amount)
-        #order.distributor_id = distributor.dist_id
-        #order.product_id = product.product_id
-        #self.session.add(order)
-        #try:
-            #self.session.commit()
-        #except:
-            #self.session.rollback()
-            #return json_error("ProductNotAdded")
+            amount = order_line["amount"]
+            ol = Order_Line(product.product_id, order.order_id, amount)
+            self.session.add(ol)
 
-        ##product_order = Product_Order(product_id=product.product_id, order_id=order.order_id)
+        try:
+            self.session.commit()
+        except:
+            # FIXME not rollbacking new order
+            self.session.rollback()
+            return json_error("OrderNotPlaced")
 
-        ##self.session.add(product_order)
-
-        ##try:
-            ##self.session.commit()
-        ##except:
-            ##self.session.rollback()
-            ##return json_error("ProductNotAdded")
-
-        #return json_neworder(order.order_id)
+        return json_neworder(order)
 
     def reserve(self, session_id, day, time_of_day, seats_needed):
         client = self._get_client(session_id)
@@ -155,65 +155,57 @@ class DAO:
 
         return json_show_tables(tables)
 
+    def list_products(self, session_id):
+        client = self._get_client(session_id)
 
-    #def list_products(self, session_id):
-        #distributor = self._get_distributor(session_id)
+        if not client:
+            return json_error("NotLoggedIn")
 
-        #if not distributor:
-            #return json_error("NotLoggedIn")
+        try:
+            products = self.session.query(Product).all()
+        except:
+            return json_error("error")
 
-        #try:
-            #products = self.session.query(Product).all()
-        #except:
-            #return json_error("error")
+        products_dict = { "products" : [] }
 
-        #products_dict = { "products" : [] }
+        for p in products:
+            products_dict["products"].append(
+                { "product_id" : p.product_id,
+                  "name" : p.name,
+                  "description" : p.description,
+                  "price" : p.price,
+                  "product_type" : p.product_type
+                })
 
-        #for p in products:
-            #products_dict["products"].append(
-                #{ "product_id" : p.product_id,
-                  #"name" : p.name,
-                  #"description" : p.description,
-                  #"price" : p.price
-                #})
+        return json_products(products_dict)
 
-        #return json_products(products_dict)
+    def ready_orders(self, session_id):
+        client = self._get_client(session_id)
 
-    #def pending_orders(self, session_id):
-        #distributor = self._get_distributor(session_id)
+        if not client:
+            return json_error("NotLoggedIn")
 
-        #if not distributor:
-            #return json_error("NotLoggedIn")
+        try:
+            # TODO filter old orders
+            ready_orders = self.session.query(Order).join(Order.client).filter(Order.date_ready != None)
+        except:
+            self.session.rollback()
+            return json_error("ReadyOrdersError")
 
-        #try:
-            #pending_orders = self.session.query(Order).join(Order.distributor).filter(Order.date_ready == None).all()
-        #except:
-            #return json_error("PendingOrdersError")
+        return json_orders(ready_orders)
 
-        #return json_orders(pending_orders)
+    def pending_orders(self, session_id):
+        client = self._get_client(session_id)
 
-    #def ready_orders(self, session_id, since):
-        #distributor = self._get_distributor(session_id)
+        if not client:
+            return json_error("NotLoggedIn")
 
-        #if not distributor:
-            #return json_error("NotLoggedIn")
+        try:
+            pending_orders = self.session.query(Order).join(Order.client).filter(Order.date_ready == None).all()
+        except:
+            return json_error("PendingOrdersError")
 
-        #try:
-            #if since=='1':
-                #ready_orders = self.session.query(Order).join(Order.distributor).filter((Order.date_picked == None) &
-                                                                                    #(Order.date_ready != None) &
-                                                                                    #(Order.visited == False)).all()
-                #for ro in ready_orders:
-                    #ro.visited = True
-                #self.session.commit()
-            #else:
-                #ready_orders = self.session.query(Order).join(Order.distributor).filter((Order.date_picked == None) &
-                                                                                    #(Order.date_ready != None)).all()
-        #except:
-            #self.session.rollback()
-            #return json_error("ReadyOrdersError")
-
-        #return json_orders(ready_orders)
+        return json_orders(pending_orders)
 
     #def orders(self, session_id):
         #distributor = self._get_distributor(session_id)
@@ -269,10 +261,8 @@ class DAO:
             reservation = self.session.query(Reservation).filter((Reservation.table_id == t.table_id) &
                                                                  (Reservation.day == day) &
                                                                  (Reservation.time_of_day == time_of_day)).all()
-            print reservation
 
             if not reservation:
-                print t.seat_number, seats_needed
                 if t.seat_number >= int(seats_needed):
                     return t
 
